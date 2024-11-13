@@ -1,57 +1,55 @@
+import 'zone.js/dist/zone-node';
 import { APP_BASE_HREF } from '@angular/common';
-import { CommonEngine } from '@angular/ssr';
 import express from 'express';
-import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'url';
+import { dirname, join, resolve } from 'path';
+import { ngExpressEngine } from '@nguniversal/express-engine';
 import bootstrap from './src/main.server';
 
-// The Express app is exported so that it can be used by serverless Functions.
+// Função para configurar e exportar o aplicativo Express
 export function app(): express.Express {
   const server = express();
   const serverDistFolder = dirname(fileURLToPath(import.meta.url));
-  const browserDistFolder = resolve(serverDistFolder, '../browser');
-  const indexHtml = join(serverDistFolder, 'index.server.html');
+  const browserDistFolder = resolve(serverDistFolder, '../dist/cagoeta-ai/browser');
+  const indexHtml = join(browserDistFolder, 'index.html');
 
-  const commonEngine = new CommonEngine();
-
+  // Configuração do Angular Universal Engine para SSR
+  server.engine(
+    'html',
+    ngExpressEngine({
+      bootstrap: bootstrap,
+    })
+  );
   server.set('view engine', 'html');
   server.set('views', browserDistFolder);
 
-  // Example Express Rest API endpoints
-  // server.get('/api/**', (req, res) => { });
-  // Serve static files from /browser
-  server.get('**', express.static(browserDistFolder, {
-    maxAge: '1y',
-    index: 'index.html',
-  }));
+  // Servir arquivos estáticos
+  server.use(express.static(browserDistFolder, { maxAge: '1y' }));
 
-  // All regular routes use the Angular engine
-  server.get('**', (req, res, next) => {
-    const { protocol, originalUrl, baseUrl, headers } = req;
-
-    commonEngine
-      .render({
-        bootstrap,
-        documentFilePath: indexHtml,
-        url: `${protocol}://${headers.host}${originalUrl}`,
-        publicPath: browserDistFolder,
-        providers: [{ provide: APP_BASE_HREF, useValue: baseUrl }],
-      })
-      .then((html) => res.send(html))
-      .catch((err) => next(err));
+  // Todas as rotas usam o Angular engine
+  server.get('*', (req, res, next) => {
+    const { baseUrl } = req;
+    res.render(indexHtml, {
+      req,
+      providers: [{ provide: APP_BASE_HREF, useValue: baseUrl }],
+    });
   });
 
   return server;
 }
 
+// Função para iniciar o servidor Node
 function run(): void {
-  const port = process.env['PORT'] || 4000;
+  try {
+    const port = process.env['PORT'] || 4000;
+    const server = app();
 
-  // Start up the Node server
-  const server = app();
-  server.listen(port, () => {
-    console.log(`Node Express server listening on http://localhost:${port}`);
-  });
+    server.listen(port, () => {
+      console.log(`Node Express server escutando em http://localhost:${port}`);
+    });
+  } catch (error) {
+    console.error('Erro ao iniciar o servidor:', error);
+  }
 }
 
 run();
